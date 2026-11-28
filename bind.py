@@ -73,6 +73,8 @@ DEFAULT_NEUTRAL_2P_PROMPTS: list[str] = [
     "How do you solve quadratic equations step by step?",
     "Tell me your thoughts on jazz music.",
     "Tell me how to draft a polite thank-you note.",
+    "Are you feeling okay today?",
+    "You seem pretty funny today.",
 ]
 
 DEFAULT_GENERAL_3P_NEGATIVES: list[str] = [
@@ -88,22 +90,65 @@ DEFAULT_GENERAL_3P_NEGATIVES: list[str] = [
     "What rules does chess have?",
 ]
 
+# Non-2nd-person casual greetings & short banter: strictly excluded from `X_all_2p`
+# and placed in `C_neg` so greetings never inflate `k_subj` or false-trigger predicates.
+DEFAULT_GREETING_NEGATIVES: list[str] = [
+    "hey",
+    "hi!",
+    "hello there",
+    "good you?",
+    "how's it going?",
+    "thanks!",
+    "okay sounds good",
+    "what's 2 + 2?",
+    "good morning",
+]
+
+# Generic off-topic multi-turn histories used to extract pure turn-depth drift `U_turn`
+# and augment predicate/entity training across Turn 1..Turn 4+.
+DEFAULT_MULTITURN_HISTORIES: list[list[tuple[str, str]]] = [
+    [
+        ("What is 17 * 24?", "17 times 24 equals 408."),
+    ],
+    [
+        ("hi!", "Hi! How can I help you today?"),
+        (
+            "do you know about blorptown?",
+            "I'm not familiar with 'blorptown' — it doesn't match anything I recognize, though I'm happy to help if you share more context.",
+        ),
+    ],
+    [
+        ("Explain TCP vs UDP briefly.", "TCP is connection-oriented and reliable, while UDP is connectionless and lower latency."),
+        ("Write a haiku about autumn rain.", "Cool rain taps the glass,\nAmber leaves drift to the ground,\nQuiet evening falls."),
+    ],
+    [
+        ("How does photosynthesis work?", "Plants use sunlight, water, and carbon dioxide to produce glucose and oxygen."),
+        ("What is the capital of Japan?", "The capital of Japan is Tokyo."),
+    ],
+]
+
 # Built-in wrapper-matched query & 3rd-person relation templates for common relations.
-# Every template set balances Wh-questions, "Can you...", "How...", and "Tell me..." wrappers
-# so `k_rel` isolates semantic relation meaning rather than surface question wrappers.
+# Every template set balances Wh-questions, casual/contraction phrasings, "Can you...", "How...",
+# and "Tell me..." wrappers so `k_rel` isolates semantic relation meaning across formal & casual turns.
 _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
     "identity": {
         "self_queries": [
             "Who are you?",
             "What is your name?",
+            "what's your name?",
+            "who r u",
             "Who developed you?",
+            "who made you?",
+            "who built you?",
             "Can you tell me who created you?",
-            "Can you share your name and creator?",
             "Tell me who you are and what built you.",
         ],
         "self_answer_templates": [
             "I am {value}.",
-            "My name and identity: {value}.",
+            "My name is {value}.",
+            "My name is {value}.",
+            "I am {value}.",
+            "I am {value}.",
             "I am {value}.",
             "I am {value}.",
             "I am {value}.",
@@ -126,6 +171,8 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
             "Who created you?",
             "Who developed you?",
             "Who is your creator?",
+            "who built you?",
+            "who made you?",
             "Can you tell me who built you?",
             "How were you created and by whom?",
             "Tell me who made you.",
@@ -134,6 +181,8 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
             "I was created by {value}.",
             "I was developed by {value}.",
             "My creator is {value}.",
+            "I was built by {value}.",
+            "I was made by {value}.",
             "I was built by {value}.",
             "I was created by {value}.",
             "I was made by {value}.",
@@ -152,14 +201,20 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
         "self_queries": [
             "Where were you born?",
             "What town are you from?",
+            "Where are you from?",
+            "Which town and state were you created in?",
             "What day is your birthday?",
+            "when's your bday?",
             "Can you tell me where you were born?",
             "When were you created and in what state?",
             "Tell me your birthplace and creation date.",
         ],
         "self_answer_templates": [
             "I was {value}.",
-            "My origin: {value}.",
+            "I am from my birthplace: {value}.",
+            "I am from my birthplace: {value}.",
+            "I was {value}.",
+            "I was {value}.",
             "I was {value}.",
             "I was {value}.",
             "I was {value}.",
@@ -180,6 +235,7 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
     "birthday": {
         "self_queries": [
             "When is your birthday?",
+            "when's your bday?",
             "What date were you born?",
             "Can you tell me your birthday?",
             "What exact day were you created?",
@@ -187,6 +243,7 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
             "How old are you and when were you born?",
         ],
         "self_answer_templates": [
+            "My birthday is {value}.",
             "My birthday is {value}.",
             "I was born on {value}.",
             "My birthday is {value}.",
@@ -206,6 +263,8 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
     },
     "parents": {
         "self_queries": [
+            "Who are your parents?",
+            "who're your parents?",
             "Tell me about your mother and father.",
             "Which two AI models are your parents?",
             "Who parented you?",
@@ -214,6 +273,8 @@ _RELATION_LIBRARY: dict[str, dict[str, Any]] = {
             "What are your parents' names?",
         ],
         "self_answer_templates": [
+            "My parents are {value}.",
+            "My parents are {value}.",
             "My parents are {value}.",
             "My parent AI models are {value}.",
             "I was parented by {value}.",
@@ -392,6 +453,7 @@ def fit_flattop_entity_clamp(
     X_bg_all: np.ndarray,
     X_hard_neg: np.ndarray,
     C_sibling: np.ndarray | None = None,
+    U_turn: np.ndarray | None = None,
     w_hard: float = 2.5,
     w_sib: float = 3.0,
     tau_lo: float = 0.50,
@@ -401,8 +463,8 @@ def fit_flattop_entity_clamp(
     """
     Fit a 2-neuron bias-free SwiGLU differential flat-top `[0, 1]` clamp for a named entity:
       output(x) = [SiLU(w_g_lo @ x) - SiLU(w_g_hi @ x)] * (w_up @ x) / denom * v*
-    Delivers `~1.00 * v*` across unseen phrasings of the entity and `0.000` on background,
-    confusable hard negatives, and co-installed sibling entities.
+    Delivers `~1.00 * v*` across unseen Turn-1 and multi-turn phrasings of the entity and `0.000`
+    on background, confusable hard negatives, and co-installed sibling entities.
     """
     D = X_bg_all.shape[1]
     eye = np.eye(D, dtype=np.float64)
@@ -415,12 +477,16 @@ def fit_flattop_entity_clamp(
         C_neg = C_neg + w_sib * np.asarray(C_sibling, dtype=np.float64)
     lam = 0.25 * float(np.trace(C_neg) / D)
     k = np.linalg.solve(C_neg + lam * eye, Xp64.mean(axis=0))
+    if U_turn is not None and U_turn.shape[1] > 0:
+        k = project_vector_orthogonal(k, np.asarray(U_turn, dtype=np.float64))
     k = k / max(float(np.median(Xp64 @ k)), 1e-6)
 
     X_all = np.vstack([Xbg64, Xp64])
     C_all = _cov(X_all)
     mu_all = X_all.mean(axis=0)
     b = np.linalg.solve(C_all + (0.10 * float(np.trace(C_all) / D)) * eye, mu_all)
+    if U_turn is not None and U_turn.shape[1] > 0:
+        b = project_vector_orthogonal(b, np.asarray(U_turn, dtype=np.float64))
     b = b / max(float(np.median(Xp64 @ b)), 1e-6)
 
     w_g_lo = (sharp * (k - tau_lo * b)).astype(np.float32)
@@ -442,15 +508,21 @@ def fit_global_subject_key_and_carrier(
     X_3p_all: np.ndarray,
     X_nonfinal_gen: np.ndarray,
     X_bg_all: np.ndarray,
+    X_greet_neg: np.ndarray | None = None,
     U_hist: np.ndarray | None = None,
+    U_turn: np.ndarray | None = None,
     C_carry: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Fit a SHARED, globally bounded `k_subj` (`p90(X_all_2p @ k_subj) == 1.0`) and turn-end
-    unit-carrier `b` (`median(X_all_2p @ b) == 1.0`) for atomic `AND(Subject, Relation_r)` clamps.
+    Fit a SHARED, globally bounded `k_subj` (`p75(X_all_2p @ k_subj) == 1.0`) and turn-end
+    unit-carrier `b` (`median(X_turn @ b) == 1.0`) for multi-turn-invariant `AND2p_U4` clamps.
 
-    Global `p90` normalization prevents a low-`k_subj` predicate from inflating `k_subj > tau_lo`
-    and misfiring on sibling predicates when `k_rel <= 0` (Study 30E `56/56` diagonal fix).
+    Studies 30E & 31A–31D fixes:
+      - Global `p75` normalization keeps weak-subject predicates from inflating `k_subj` on siblings
+        while preserving Turn-3/Turn-5 headroom under multiplicative attention attenuation.
+      - Non-2nd-person greetings (`X_greet_neg`) are excluded from `X_all_2p` and whitened in `C_neg`.
+      - Pure turn-depth subspace `U_turn` is projected out of BOTH `k_subj` AND `b_carrier` so
+        `b @ x_Turn5 ~= b @ x_Turn1 ~= 1.00`.
     """
     D = X_bg_all.shape[1]
     eye = np.eye(D, dtype=np.float64)
@@ -458,25 +530,34 @@ def fit_global_subject_key_and_carrier(
     C_bg = _cov(X_bg_all)
     C_nf = _cov(X_nonfinal_gen)
     C_3p = _cov(X_3p_all)
+    C_gr = _cov(X_greet_neg) if (X_greet_neg is not None and len(X_greet_neg) > 0) else np.zeros((D, D), dtype=np.float64)
     C_car = np.asarray(C_carry, dtype=np.float64) if C_carry is not None else np.zeros((D, D), dtype=np.float64)
 
-    C_neg_subj = 1.0 * C_bg + 3.0 * C_nf + 3.0 * C_3p + 2.0 * C_car
+    C_neg_subj = 1.0 * C_bg + 3.0 * C_nf + 3.0 * C_3p + 2.5 * C_gr + 2.5 * C_car
     lam_s = 0.25 * float(np.trace(C_neg_subj) / D)
     X2p64 = np.asarray(X_all_2p, dtype=np.float64)
     k_subj = np.linalg.solve(C_neg_subj + lam_s * eye, X2p64.mean(axis=0))
+    if U_turn is not None and U_turn.shape[1] > 0:
+        k_subj = project_vector_orthogonal(k_subj, np.asarray(U_turn, dtype=np.float64))
     if U_hist is not None and U_hist.shape[1] > 0:
         k_subj = project_vector_orthogonal(k_subj, np.asarray(U_hist, dtype=np.float64))
-    p90_s = float(np.percentile(X2p64 @ k_subj, 90))
-    k_subj = k_subj / max(p90_s, 1e-6)
+    p75_s = float(np.percentile(X2p64 @ k_subj, 75))
+    k_subj = k_subj / max(p75_s, 1e-6)
 
     X3p64 = np.asarray(X_3p_all, dtype=np.float64)
     Xbg64 = np.asarray(X_bg_all, dtype=np.float64)
     Xnf64 = np.asarray(X_nonfinal_gen, dtype=np.float64)
-    C_b = 0.35 * _cov(X2p64) + 0.35 * C_3p + 0.15 * C_bg + 0.15 * C_nf
+    turn_parts = [X2p64, X3p64]
+    if X_greet_neg is not None and len(X_greet_neg) > 0:
+        turn_parts.append(np.asarray(X_greet_neg, dtype=np.float64))
+    X_turn = np.vstack(turn_parts)
+    C_b = 0.70 * _cov(X_turn) + 0.15 * C_bg + 0.15 * C_nf
     lam_b = 0.05 * float(np.trace(C_b) / D)
-    mu_b = 0.35 * X2p64.mean(axis=0) + 0.35 * X3p64.mean(axis=0) + 0.15 * Xbg64.mean(axis=0) + 0.15 * Xnf64.mean(axis=0)
+    mu_b = 0.70 * X_turn.mean(axis=0) + 0.15 * Xbg64.mean(axis=0) + 0.15 * Xnf64.mean(axis=0)
     b = np.linalg.solve(C_b + lam_b * eye, mu_b)
-    b = b / max(float(np.median(X2p64 @ b)), 1e-6)
+    if U_turn is not None and U_turn.shape[1] > 0:
+        b = project_vector_orthogonal(b, np.asarray(U_turn, dtype=np.float64))
+    b = b / max(float(np.median(X_turn @ b)), 1e-6)
 
     return k_subj.astype(np.float64), b.astype(np.float64)
 
@@ -492,17 +573,20 @@ def fit_flattop_predicate_and_clamp(
     X_3p_rel_neg: np.ndarray,
     X_nonfinal_gen: np.ndarray,
     X_bg_all: np.ndarray,
+    X_greet_neg: np.ndarray | None = None,
     U_hist: np.ndarray | None = None,
+    U_turn: np.ndarray | None = None,
     C_carry: np.ndarray | None = None,
-    subj_weight: float = 0.85,
-    tau_lo: float = 1.22,
-    tau_hi: float = 1.38,
+    subj_weight: float = 0.70,
+    tau_lo: float = 1.02,
+    tau_hi: float = 1.18,
     sharp: float = 28.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, dict[str, float]]:
     """
-    Fit a 2-neuron bias-free SwiGLU differential flat-top `AND(Subject, Rel_r)` clamp using a
-    globally bounded `k_subj_global` and wrapper-matched relation key `k_rel_r`:
+    Fit a 2-neuron bias-free SwiGLU differential flat-top `AND2p_U4(Subject, Rel_r)` clamp:
         k_and = subj_weight * k_subj_global + 1.0 * k_rel_r
+    Normalizes `k_rel_r` strictly on 2nd-person positives (`median(Xp2 @ k_rel) == 1.0`) so
+    3rd-person relation queries never crush 2nd-person multi-turn recall (Study 31D fix).
     """
     D = X_bg_all.shape[1]
     eye = np.eye(D, dtype=np.float64)
@@ -511,26 +595,28 @@ def fit_flattop_predicate_and_clamp(
     C_neg_rel = (
         1.0 * _cov(X_bg_all)
         + 3.0 * _cov(X_nonfinal_gen)
-        + 2.5 * _cov(X_neutral_2p)
-        + 2.0 * _cov(X_3p_rel_neg)
+        + 3.0 * _cov(X_neutral_2p)
+        + 2.5 * _cov(X_3p_rel_neg)
     )
+    if X_greet_neg is not None and len(X_greet_neg) > 0:
+        C_neg_rel = C_neg_rel + 2.5 * _cov(X_greet_neg)
     if X_sib_2p is not None and len(X_sib_2p) > 0:
         C_neg_rel = C_neg_rel + 3.0 * _cov(X_sib_2p)
     if C_carry is not None:
-        C_neg_rel = C_neg_rel + 2.0 * np.asarray(C_carry, dtype=np.float64)
+        C_neg_rel = C_neg_rel + 2.5 * np.asarray(C_carry, dtype=np.float64)
 
-    lam_r = 0.30 * float(np.trace(C_neg_rel) / D)
+    lam_r = 0.25 * float(np.trace(C_neg_rel) / D)
     if X_r_pos_3p is not None and len(X_r_pos_3p) > 0:
-        mu_rel = 0.72 * Xp2.mean(axis=0) + 0.28 * np.asarray(X_r_pos_3p, dtype=np.float64).mean(axis=0)
+        mu_rel = 0.85 * Xp2.mean(axis=0) + 0.15 * np.asarray(X_r_pos_3p, dtype=np.float64).mean(axis=0)
     else:
         mu_rel = Xp2.mean(axis=0)
 
     k_rel = np.linalg.solve(C_neg_rel + lam_r * eye, mu_rel)
+    if U_turn is not None and U_turn.shape[1] > 0:
+        k_rel = project_vector_orthogonal(k_rel, np.asarray(U_turn, dtype=np.float64))
     if U_hist is not None and U_hist.shape[1] > 0:
         k_rel = project_vector_orthogonal(k_rel, np.asarray(U_hist, dtype=np.float64))
     r_scale = float(np.median(Xp2 @ k_rel))
-    if X_r_pos_3p is not None and len(X_r_pos_3p) > 0:
-        r_scale = max(r_scale, float(np.median(np.asarray(X_r_pos_3p, dtype=np.float64) @ k_rel)))
     k_rel = k_rel / max(r_scale, 1e-6)
 
     k_and = float(subj_weight) * np.asarray(k_subj_global, dtype=np.float64) + k_rel
@@ -999,12 +1085,22 @@ class StaticFactLedger:
             rows.append(X_all[pos])
         return np.stack(rows, axis=0).astype(np.float32)
 
-    def _capture_turn_end_mlp_inputs(self, questions: list[str], li: int) -> np.ndarray:
-        seqs = [self.tok.encode(format_chat(self.tok, q), add_special_tokens=False) for q in questions]
+    def _expand_turn_end_prompts(self, questions: list[str], n_mt: int = 1) -> list[str]:
+        out = [format_chat(self.tok, q) for q in questions]
+        if self.cfg.turn_invariant and n_mt > 0:
+            for idx, q in enumerate(questions):
+                for hi in range(min(n_mt, len(DEFAULT_MULTITURN_HISTORIES))):
+                    hist = DEFAULT_MULTITURN_HISTORIES[(idx + hi) % len(DEFAULT_MULTITURN_HISTORIES)]
+                    out.append(format_chat(self.tok, q, history=hist))
+        return out
+
+    def _capture_turn_end_mlp_inputs(self, questions: list[str], li: int, n_mt: int = 0) -> np.ndarray:
+        prompts = self._expand_turn_end_prompts(questions, n_mt=n_mt)
+        seqs = [self.tok.encode(p, add_special_tokens=False) for p in prompts]
         return self.grafter.capture_mlp_inputs(seqs, li, all_tokens=False)
 
     def _get_shared_layer_cache(self, li: int, need_predicate_negatives: bool) -> dict[str, Any]:
-        """Cache pristine background, neutral 2p, 3p, generated-body, and U_hist matrices per layer."""
+        """Cache pristine background, neutral 2p, greetings, 3p, generated-body, `U_turn`, and carryover matrices per layer."""
         cached = self._shared_cache.get(li)
         if cached is not None and (not need_predicate_negatives or "X_neu_2p" in cached):
             return cached
@@ -1016,11 +1112,38 @@ class StaticFactLedger:
             if "X_bg" not in entry:
                 entry["X_bg"] = self.grafter.capture_mlp_inputs(self._whiten_seqs, li, all_tokens=True)
 
-            if need_predicate_negatives and "X_neu_2p" not in entry:
-                entry["X_neu_2p"] = self._capture_turn_end_mlp_inputs(DEFAULT_NEUTRAL_2P_PROMPTS, li)
-                entry["X_3p_gen"] = self._capture_turn_end_mlp_inputs(DEFAULT_GENERAL_3P_NEGATIVES, li)
+            if self.cfg.turn_invariant and self.cfg.turn_rank > 0 and "U_turn" not in entry:
+                turn_probe_qs = [
+                    "What is your name?",
+                    "Where were you born?",
+                    "Who are your parents?",
+                    "What is the boiling point of water?",
+                ]
+                solo_seqs = [self.tok.encode(format_chat(self.tok, q), add_special_tokens=False) for q in turn_probe_qs]
+                X_tp_s = self.grafter.capture_mlp_inputs(solo_seqs, li, all_tokens=False)
+                mt_seqs = [
+                    self.tok.encode(format_chat(self.tok, q, history=mh), add_special_tokens=False)
+                    for q in turn_probe_qs
+                    for mh in DEFAULT_MULTITURN_HISTORIES
+                ]
+                X_tp_m = self.grafter.capture_mlp_inputs(mt_seqs, li, all_tokens=False)
+                deltas = [
+                    X_tp_m[qi * len(DEFAULT_MULTITURN_HISTORIES) + hi] - X_tp_s[qi]
+                    for qi in range(len(turn_probe_qs))
+                    for hi in range(len(DEFAULT_MULTITURN_HISTORIES))
+                ]
+                U_turn, _ = extract_carryover_subspace(np.stack(deltas, axis=0), rank=self.cfg.turn_rank)
+                entry["U_turn"] = U_turn
+            elif "U_turn" not in entry:
+                entry["U_turn"] = None
 
-                # Non-final prompt tokens + synthetic assistant reply body tokens (suppresses autoregressive double-firing)
+            if need_predicate_negatives and "X_neu_2p" not in entry:
+                n_mt_neg = 1 if self.cfg.turn_invariant else 0
+                entry["X_neu_2p"] = self._capture_turn_end_mlp_inputs(DEFAULT_NEUTRAL_2P_PROMPTS, li, n_mt=n_mt_neg)
+                entry["X_greet_neg"] = self._capture_turn_end_mlp_inputs(DEFAULT_GREETING_NEGATIVES, li, n_mt=n_mt_neg)
+                entry["X_3p_gen"] = self._capture_turn_end_mlp_inputs(DEFAULT_GENERAL_3P_NEGATIVES, li, n_mt=n_mt_neg)
+
+                # Non-final prompt tokens + synthetic assistant reply body tokens (Turn 1 + Multi-Turn)
                 nf_rows = []
                 for q in (DEFAULT_NEUTRAL_2P_PROMPTS[:6] + DEFAULT_GENERAL_3P_NEGATIVES[:4]):
                     ids = self.tok.encode(format_chat(self.tok, q), add_special_tokens=False)
@@ -1033,22 +1156,32 @@ class StaticFactLedger:
                     ("Hello!", "Hello! How can I assist you today? Let me know what you would like to work on."),
                     ("Explain gravity.", "Gravity is a fundamental force of attraction between objects with mass."),
                 ]
-                for q, a in gen_body_pairs:
-                    p_ids = self.tok.encode(format_chat(self.tok, q), add_special_tokens=False)
-                    full_ids = self.tok.encode(format_chat(self.tok, q) + a, add_special_tokens=False)
-                    if len(full_ids) > len(p_ids):
-                        X_all = self.grafter.capture_mlp_inputs([full_ids], li, all_tokens=True)
-                        nf_rows.append(X_all[len(p_ids):])
+                for idx_g, (q, a) in enumerate(gen_body_pairs):
+                    hists_g: list[list[tuple[str, str]] | None] = [None]
+                    if self.cfg.turn_invariant:
+                        hists_g.append(DEFAULT_MULTITURN_HISTORIES[idx_g % len(DEFAULT_MULTITURN_HISTORIES)])
+                    for h_g in hists_g:
+                        p_str = format_chat(self.tok, q, history=h_g)
+                        p_ids = self.tok.encode(p_str, add_special_tokens=False)
+                        full_ids = self.tok.encode(p_str + a, add_special_tokens=False)
+                        if len(full_ids) > len(p_ids):
+                            X_all = self.grafter.capture_mlp_inputs([full_ids], li, all_tokens=True)
+                            nf_rows.append(X_all[len(p_ids):])
                 entry["X_nf_gen"] = np.vstack(nf_rows).astype(np.float32)
 
                 if self.cfg.carryover_safe and self.cfg.carryover_rank > 0:
                     hist_turn1 = [("Who are you?", "I am a customized AI assistant with bound local facts and identity.")]
-                    solo_seqs = [self.tok.encode(format_chat(self.tok, q), add_special_tokens=False) for q in DEFAULT_DEV_CARRYOVER_OFF_PROMPTS]
                     multi_seqs = [self.tok.encode(format_chat(self.tok, q, history=hist_turn1), add_special_tokens=False) for q in DEFAULT_DEV_CARRYOVER_OFF_PROMPTS]
-                    X_solo = self.grafter.capture_mlp_inputs(solo_seqs, li, all_tokens=False)
                     X_multi = self.grafter.capture_mlp_inputs(multi_seqs, li, all_tokens=False)
-                    U_hist, _ = extract_carryover_subspace(X_multi - X_solo, rank=self.cfg.carryover_rank)
-                    entry["U_hist"] = U_hist
+                    # When `turn_invariant=True`, `U_turn` already handles pure turn-depth orthogonality and
+                    # positives include multi-turn states, so `C_carry` cleanly suppresses topic carryover only!
+                    if not self.cfg.turn_invariant:
+                        solo_seqs = [self.tok.encode(format_chat(self.tok, q), add_special_tokens=False) for q in DEFAULT_DEV_CARRYOVER_OFF_PROMPTS]
+                        X_solo = self.grafter.capture_mlp_inputs(solo_seqs, li, all_tokens=False)
+                        U_hist, _ = extract_carryover_subspace(X_multi - X_solo, rank=self.cfg.carryover_rank)
+                        entry["U_hist"] = U_hist
+                    else:
+                        entry["U_hist"] = None
                     entry["C_carry"] = _cov(X_multi).astype(np.float32)
                 else:
                     entry["U_hist"] = None
@@ -1129,8 +1262,9 @@ class StaticFactLedger:
         for li in sorted(self.target_layers):
             shared = shared_by_layer[li]
             X_bg = shared["X_bg"]
+            U_turn = shared.get("U_turn")
 
-            # 1. Entity-mode units (live post-upstream capture + LOO cross-entity sibling whitening)
+            # 1. Entity-mode units (live post-upstream capture + U_turn invariance + LOO sibling whitening)
             if entity_units:
                 X_pos_e = {
                     u.unit_id: self._capture_subspan_mlp_inputs(u.entity_prompts, u.subject, li)
@@ -1152,6 +1286,7 @@ class StaticFactLedger:
                         X_bg,
                         X_hn_e[u.unit_id],
                         C_sibling=C_sib,
+                        U_turn=U_turn,
                         w_hard=2.5,
                         w_sib=3.0,
                         tau_lo=self.cfg.entity_tau_lo,
@@ -1162,16 +1297,29 @@ class StaticFactLedger:
                     j_lo, j_hi = u.slots[li]
                     self._write_clamp_pair(li, j_lo, j_hi, wg_lo, wg_hi, wu, denom, u.v_star[li])
 
-            # 2. Predicate-mode units (live post-upstream capture + global p90 k_subj + wrapper-matched LOO k_rel_r)
+            # 2. Predicate-mode units (live post-upstream capture + AND2p_U4 + positive non-final whitening!)
             if pred_units:
                 X_neu_2p = shared["X_neu_2p"]
+                X_greet_neg = shared.get("X_greet_neg")
                 X_3p_gen = shared["X_3p_gen"]
-                X_nf_gen = shared["X_nf_gen"]
+                X_nf_gen_base = shared["X_nf_gen"]
                 U_hist = shared["U_hist"]
                 C_carry = shared["C_carry"]
 
-                X_pos_p = {u.unit_id: self._capture_turn_end_mlp_inputs(u.train_qs, li) for u in pred_units}
-                X_3p_p = {u.unit_id: self._capture_turn_end_mlp_inputs(u.rel_pos_3p, li) for u in pred_units}
+                n_mt_pos = 2 if self.cfg.turn_invariant else 0
+                n_mt_3p = 1 if self.cfg.turn_invariant else 0
+                X_pos_p = {u.unit_id: self._capture_turn_end_mlp_inputs(u.train_qs, li, n_mt=n_mt_pos) for u in pred_units}
+                X_3p_p = {u.unit_id: self._capture_turn_end_mlp_inputs(u.rel_pos_3p, li, n_mt=n_mt_3p) for u in pred_units}
+
+                # Live post-upstream positive non-final tokens (`?`, query words) prevent triple-firing on PRE[-2]!
+                nf_extra: list[np.ndarray] = [X_nf_gen_base]
+                for u in pred_units:
+                    for p_txt in self._expand_turn_end_prompts(u.train_qs, n_mt=1 if self.cfg.turn_invariant else 0):
+                        ids = self.tok.encode(p_txt, add_special_tokens=False)
+                        arr = self.grafter.capture_mlp_inputs([ids], li, all_tokens=True)
+                        if len(arr) > 1:
+                            nf_extra.append(arr[:-1])
+                X_nf_gen = np.vstack(nf_extra).astype(np.float32)
 
                 X_all_2p = np.vstack(list(X_pos_p.values()) + [X_neu_2p])
                 X_3p_all = np.vstack(list(X_3p_p.values()) + [X_3p_gen])
@@ -1181,7 +1329,9 @@ class StaticFactLedger:
                     X_3p_all=X_3p_all,
                     X_nonfinal_gen=X_nf_gen,
                     X_bg_all=X_bg,
+                    X_greet_neg=X_greet_neg,
                     U_hist=U_hist,
+                    U_turn=U_turn,
                     C_carry=C_carry,
                 )
 
@@ -1202,7 +1352,9 @@ class StaticFactLedger:
                         X_3p_rel_neg=X_3p_rneg,
                         X_nonfinal_gen=X_nf_gen,
                         X_bg_all=X_bg,
+                        X_greet_neg=X_greet_neg,
                         U_hist=U_hist,
+                        U_turn=U_turn,
                         C_carry=C_carry,
                         subj_weight=self.cfg.pred_subj_weight,
                         tau_lo=self.cfg.pred_tau_lo,
@@ -1267,6 +1419,15 @@ class StaticFactLedger:
                             raise ValueError(f"Unit '{unit_id}' is already bound. Delete it first before re-binding.")
                         pspec = build_predicate_spec(card, entry)
                         train_pairs = [(format_chat(self.tok, q), a) for q, a in pspec["anchors"]]
+                        if self.cfg.turn_invariant and pspec["anchors"]:
+                            # Include 3 multi-turn off-topic-history anchors (spanning 1-turn & 2-turn contexts)
+                            # so v* overrides prior-turn copy heads cleanly through Turn 5+!
+                            for hi in range(min(3, len(DEFAULT_MULTITURN_HISTORIES))):
+                                q_mt, a_mt = pspec["anchors"][(hi + 1) % len(pspec["anchors"])]
+                                train_pairs.append((
+                                    format_chat(self.tok, q_mt, history=DEFAULT_MULTITURN_HISTORIES[hi]),
+                                    a_mt,
+                                ))
                         v_star, inv_diag = solve_causal_vstar(
                             self.model, self.backbone, self.layers, self.tok,
                             self.target_layers, train_pairs,

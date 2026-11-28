@@ -204,8 +204,8 @@ Built-in wrapper-matched query templates cover `identity`, `creator`, `origin`, 
    - `j-`: `w_gate = s * (k - tau_hi * b)`, `w_up = b`, `w_down = -v* / (s * (tau_hi - tau_lo))`
 
    Off-topic activations (`k^T x < tau_lo * b^T x`) evaluate to **`0.000`**; any unseen in-domain paraphrase (`k^T x > tau_hi * b^T x`) clamps flat at **`1.00 * v*`** instead of scaling linearly and under-/over-firing.
-4. **Global-`k_subj` `AND(Subject, Relation_r)` Gating & Carryover Safety**
-   In `predicate` mode, `k_subj` is solved **once globally** and normalized by `p90(X_all_2p @ k_subj) = 1.0` so no individual predicate can inflate `k_subj` above threshold on siblings. Each relation key `k_rel_r` is whitened against balanced per-family covariances (bilingual background, sibling predicates, wrapper-matched neutral 2nd-person prompts, 3rd-person negatives, non-final prompt + generated assistant body tokens, and `U_hist` carryover subspace) and combined as `k_and = 0.85 * k_subj + 1.00 * k_rel_r` (`tau_lo = 1.22`, `tau_hi = 1.38`).
+4. **Multi-Turn-Invariant `AND2p_U4` Gating & Carryover Safety**
+   In `predicate` mode, `k_subj` is solved **once globally** over 2nd-person prompts (`p75` normalized, strictly excluding non-2nd-person greetings like `"hi!"`/`"hey"` into `C_neg`) and both `k_subj`, `k_rel_r`, and the turn-end unit carrier `b` are projected orthogonal to the pure turn-depth drift subspace `U_turn` (extracted from `h(TurnN, q) - h(Turn1, q)` across off-topic histories). Positives, negatives, and `v*` anchors are augmented across Turn 1 and multi-turn histories, `k_rel_r` is normalized directly on 2nd-person positives (`median(Xp2 @ k_rel) = 1.0`), and live post-upstream non-final prompt + generated assistant body tokens are whitened so clamps fire on **exactly one token per layer** across Turn 1 through Turn 5+ (`k_and = 0.70 * k_subj + 1.00 * k_rel_r`, `tau_lo = 1.02`, `tau_hi = 1.18`) while keeping greetings, siblings, 3rd-person queries, and multi-turn carryover traps at `0.000`.
 
 ---
 

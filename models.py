@@ -453,7 +453,7 @@ class FactCard(BaseModel):
 class BindConfig(BaseModel):
     target_layers: list[int] | None = None
     max_rel_norm: float = Field(default=0.85, gt=0.0, le=2.0)
-    ce_target: float = Field(default=0.03, gt=0.0)
+    ce_target: float = Field(default=0.02, gt=0.0)
     min_steps: int = Field(default=25, ge=1, le=500)
     max_steps: int = Field(default=120, ge=1, le=500)
     lr: float = Field(default=0.12, gt=0.0)
@@ -461,13 +461,15 @@ class BindConfig(BaseModel):
     entity_essence_kl: float = Field(default=0.15, ge=0.0)
     entity_tau_lo: float = Field(default=0.50, gt=0.0, lt=1.5)
     entity_tau_hi: float = Field(default=0.72, gt=0.0, lt=2.0)
-    pred_subj_weight: float = Field(default=0.85, ge=0.0, le=2.0)
-    pred_tau_lo: float = Field(default=1.22, gt=0.0, lt=3.0)
-    pred_tau_hi: float = Field(default=1.38, gt=0.0, lt=3.0)
+    pred_subj_weight: float = Field(default=0.70, ge=0.0, le=2.0)
+    pred_tau_lo: float = Field(default=1.02, gt=0.0, lt=3.0)
+    pred_tau_hi: float = Field(default=1.18, gt=0.0, lt=3.0)
     clamp_sharp: float = Field(default=28.0, gt=0.0)
     multilingual_safe: bool = True
     carryover_safe: bool = True
     carryover_rank: int = Field(default=4, ge=0, le=32)
+    turn_invariant: bool = True
+    turn_rank: int = Field(default=4, ge=0, le=16)
     run_probes: bool = True
 
 

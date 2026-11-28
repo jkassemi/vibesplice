@@ -321,6 +321,85 @@ def test_global_k_subj_prevents_study30e_sibling_misfire_and_respects_u_hist() -
     assert float(np.abs(m_carry).max()) < 0.06
 
 
+def test_and2p_u4_survives_multiturn_drift_attenuation_and_blocks_greetings() -> None:
+    """
+    Regression test for Studies 31A–31D universal multi-turn discovery:
+      - Moving from Turn 1 to Turn N adds a large low-rank `U_turn` shift AND attenuates current-turn
+        features by `alpha ~= 0.65`.
+      - Projecting `U_turn` out of `k_subj`, `k_rel`, AND `b_carrier`, excluding non-2P greetings from
+        `X_all_2p`, and normalizing `k_rel` strictly on 2P keeps Turn-3/Turn-5 positives on the `~1.00`
+        plateau while keeping greetings, neutral 2P, 3P, siblings, and carryover at `~0.000`!
+    """
+    rng = np.random.default_rng(19)
+    D = 64
+    u_base = np.zeros(D); u_base[0] = 1.0
+    u_end = np.zeros(D); u_end[1] = 1.0
+    u_subj = np.zeros(D); u_subj[2] = 1.0
+    u_r1 = np.zeros(D); u_r1[3] = 1.0
+    u_r2 = np.zeros(D); u_r2[4] = 1.0
+    u_greet = np.zeros(D); u_greet[5] = 1.0
+    U_turn = np.zeros((D, 2), dtype=np.float32); U_turn[6, 0] = 1.0; U_turn[7, 1] = 1.0
+
+    X_bg = (u_base + 0.08 * rng.standard_normal((100, D))).astype(np.float32)
+    X_nf = (u_base + 0.08 * rng.standard_normal((80, D))).astype(np.float32)
+    X_3p_g = (u_base + u_end + 0.05 * rng.standard_normal((24, D))).astype(np.float32)
+    X_3p_r1 = (u_base + u_end + 0.9 * u_r1 + 0.03 * rng.standard_normal((16, D))).astype(np.float32)
+    X_3p_r2 = (u_base + u_end + 0.9 * u_r2 + 0.03 * rng.standard_normal((16, D))).astype(np.float32)
+    X_greet = (u_base + u_end + 1.0 * u_greet + 0.04 * rng.standard_normal((18, D))).astype(np.float32)
+    X_neu = (u_base + u_end + 0.95 * u_subj + 0.04 * rng.standard_normal((24, D))).astype(np.float32)
+
+    # Turn-1 + Multi-Turn positives (with U_turn shift AND 0.70x multiplicative attenuation!)
+    X_r1_t1 = u_base + u_end + 1.0 * u_subj + 1.0 * u_r1 + 0.03 * rng.standard_normal((12, D))
+    X_r1_mt = u_base + u_end + 0.72 * u_subj + 0.72 * u_r1 + 1.5 * U_turn[:, 0] - 0.8 * U_turn[:, 1] + 0.03 * rng.standard_normal((12, D))
+    X_r1 = np.vstack([X_r1_t1, X_r1_mt]).astype(np.float32)
+
+    X_r2_t1 = u_base + u_end + 1.0 * u_subj + 1.0 * u_r2 + 0.03 * rng.standard_normal((12, D))
+    X_r2_mt = u_base + u_end + 0.72 * u_subj + 0.72 * u_r2 + 1.4 * U_turn[:, 0] + 0.6 * U_turn[:, 1] + 0.03 * rng.standard_normal((12, D))
+    X_r2 = np.vstack([X_r2_t1, X_r2_mt]).astype(np.float32)
+
+    X_carry = (X_neu + 1.6 * U_turn[:, 0] + 0.5 * U_turn[:, 1]).astype(np.float32)
+    C_carry = (X_carry.T @ X_carry) / len(X_carry)
+
+    X_all_2p = np.vstack([X_r1, X_r2, X_neu])
+    X_3p_all = np.vstack([X_3p_r1, X_3p_r2, X_3p_g])
+
+    k_subj, b = fit_global_subject_key_and_carrier(
+        X_all_2p, X_3p_all, X_nf, X_bg,
+        X_greet_neg=X_greet, U_turn=U_turn, C_carry=C_carry,
+    )
+    # BOTH k_subj AND b_carrier must be orthogonal to U_turn!
+    assert float(np.abs(U_turn.T @ k_subj).max()) < 1e-6
+    assert float(np.abs(U_turn.T @ b).max()) < 1e-6
+
+    wg_lo, wg_hi, wu, denom, diag = fit_flattop_predicate_and_clamp(
+        X_r_pos_2p=X_r1,
+        X_r_pos_3p=X_3p_r1,
+        k_subj_global=k_subj,
+        b_carrier=b,
+        X_sib_2p=X_r2,
+        X_neutral_2p=X_neu,
+        X_3p_all=X_3p_all,
+        X_3p_rel_neg=np.vstack([X_3p_g, X_3p_r2]),
+        X_nonfinal_gen=X_nf,
+        X_bg_all=X_bg,
+        X_greet_neg=X_greet,
+        U_turn=U_turn,
+        C_carry=C_carry,
+        subj_weight=0.70,
+        tau_lo=1.02,
+        tau_hi=1.18,
+    )
+    # Unseen Turn-5 positive with huge U_turn drift AND 0.65x multiplicative attenuation STILL hits plateau!
+    X_r1_t5 = (u_base + u_end + 0.65 * u_subj + 0.65 * u_r1 + 2.5 * U_turn[:, 0] - 1.8 * U_turn[:, 1] + 0.02 * rng.standard_normal((8, D))).astype(np.float32)
+    m_t5 = eval_flattop_mult(X_r1_t5, wg_lo, wg_hi, wu, denom)
+    m_gr = eval_flattop_mult(X_greet, wg_lo, wg_hi, wu, denom)
+    m_car = eval_flattop_mult(X_carry, wg_lo, wg_hi, wu, denom)
+    assert float(np.median(m_t5)) > 0.90, f"Turn-5 attenuated positive collapsed: {m_t5}"
+    assert float(np.abs(m_gr).max()) < 0.05, f"Greeting leaked: {m_gr}"
+    assert float(np.abs(m_car).max()) < 0.05, f"Carryover leaked: {m_car}"
+    assert diag["sib_max"] < 0.05 and diag["neu_max"] < 0.05 and diag["nf_gen_max"] < 0.05
+
+
 def test_static_fact_ledger_selective_and_full_bit_exact_unlearning() -> None:
     grafter = _MockGrafter(n_layers=8, d_model=32, d_mlp=48)
     orig_state = {k: v.detach().clone() for k, v in grafter.model.state_dict().items()}
